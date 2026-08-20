@@ -1,0 +1,1 @@
+A software system that allows customers to view a restaurant menu, add food items to a cart, place orders, make payments, and track order status. Restaurant staff can manage menu items and process incoming orders, while an administrator manages users, restaurants, and system-level data.
