@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #f7f2e8; color: #17231b; }
+::selection { background: #e68a2e; color: #17231b; }
+
+@layer components {
+  .page { @apply mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14; }
+  .eyebrow { @apply text-xs font-black uppercase tracking-[0.22em] text-saffron; }
+  .title { @apply mt-2 text-3xl font-black tracking-tight sm:text-5xl; }
+  .field-label { @apply mb-1.5 block text-sm font-bold; }
+  .admin-nav { @apply mb-8 flex flex-wrap gap-2 border-b border-ink/10 pb-4; }
+  .admin-nav a { @apply rounded-full px-4 py-2 text-sm font-semibold hover:bg-white; }
+}

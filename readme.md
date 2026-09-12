@@ -1,90 +1,53 @@
-# Restaurant Ordering Platform
+# Table & Tiffin Restaurant Ordering System
 
-A full-stack restaurant ordering system with role-based access for customers, restaurant staff, and administrators. Built with React on the frontend and Node.js/Express on the backend, exposing REST APIs for authentication, menu management, orders, and payments.
+A full-stack restaurant ordering prototype built with Next.js App Router, PostgreSQL, Prisma, NextAuth, Tailwind CSS, shadcn-style UI primitives, Zustand, zod, and bcrypt.
 
----
+The payment experience is a **test/virtual wallet sandbox**. It never collects card or UPI details and never moves real money.
 
-## Overview
+## Setup
 
-The platform supports three distinct user roles, each with its own permissions and views, all backed by a shared REST API.
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+2. Copy `.env.example` to `.env` and provide a PostgreSQL `DATABASE_URL` and a long random `NEXTAUTH_SECRET`.
+3. Create and apply the database migration:
+   ```bash
+   npx prisma migrate dev --name init
+   ```
+4. Seed demo accounts, wallets, categories, and menu items:
+   ```bash
+   npx prisma db seed
+   ```
+5. Start the application:
+   ```bash
+   npm run dev
+   ```
+6. Open `http://localhost:3000`.
 
-- **Customers** browse menus, manage a cart, place orders, pay, and track order status in real time.
-- **Restaurant staff** manage menu items and process incoming orders through their lifecycle.
-- **Administrators** manage users, restaurants, and system-wide data.
+## Demo Accounts
 
----
+All seeded accounts use password `Demo123!`.
 
-## Features
-
-### Customer
-- Browse restaurant menus with item details, descriptions, and pricing
-- Add items to cart, adjust quantities, remove items
-- Place orders and complete payment
-- Track order status from placement through preparation to delivery
-- View past order history
-
-### Restaurant Staff
-- Add, edit, and remove menu items
-- Mark items as available or out of stock
-- View incoming orders in a dashboard
-- Update order status (received, preparing, ready, out for delivery, completed)
-
-### Administrator
-- Create, edit, and remove restaurant listings
-- Manage user accounts across all roles (customers, staff, admins)
-- View and manage system-wide data, including all orders and restaurant records
-- Monitor platform activity across restaurants
-
----
-
-## Tech Stack
-
-| Layer | Technology |
+| Role | Email |
 |---|---|
-| Frontend | React |
-| Backend | Node.js, Express |
-| API | REST |
-| Database | *(add yours, e.g. MongoDB, PostgreSQL, MySQL)* |
-| Authentication | Role-based access control (JWT or session-based) |
+| Admin | `admin@table.test` |
+| Staff | `staff@table.test` |
+| Customer | `customer@table.test` |
+| Customer | `rohan@table.test` |
 
----
+The primary customer starts with ₹2,500 in virtual funds.
 
-## Architecture
+## Payment Simulation
 
-```
-Client (React)
-      │
-      ▼
-REST API (Express)
-      │
-      ▼
-Database
-```
+`PAYMENT_FAILURE_RATE` accepts a decimal from `0` through `1`. For example, `0.05` randomly declines approximately 5% of attempts. It defaults to `0`. `PAYMENT_DELAY_MS` defaults to `1000` to mimic gateway latency.
 
-Customers, staff, and admins all authenticate against the same backend but reach different route groups based on role. Middleware checks the user's role on each request and blocks access to routes outside their permissions.
+Checkout, wallet top-ups, and eligible cancellation refunds use serializable Prisma transactions. Checkout conditionally debits the wallet, credits the `PLATFORM` ledger, records the payment, marks the order paid, and clears the cart atomically.
 
----
+## Routes
 
-## Data Model (high level)
+- Customer: `/`, `/menu/[itemId]`, `/cart`, `/checkout`, `/orders`, `/orders/[id]`, `/wallet`
+- Admin: `/admin`, `/admin/users`, `/admin/staff`, `/admin/orders`, `/admin/menu`
+- Staff: `/staff`, `/staff/menu`, `/staff/orders`, `/staff/orders/[id]`
 
-- **User** — id, name, email, password hash, role (customer, staff, admin)
-- **Restaurant** — id, name, address, owner/staff references, status
-- **MenuItem** — id, restaurant id, name, description, price, availability
-- **Cart** — user id, list of menu item ids with quantities
-- **Order** — id, user id, restaurant id, items, total, status, timestamps
-- **Payment** — id, order id, amount, method, status
-
----
-
-## API Structure (example)
-
-```
-/api/auth
-  POST   /register
-  POST   /login
-
-/api/menu
-  GET    /:restaurantId          → list menu items
-  POST   /:restaurantId          → add item (staff)
-  PUT    /:restaurantId/:itemId  → edit item (staff)
-  DELETE /:restaurantId/:itemId
+Middleware provides route-level role gates. Every mutation independently loads the current database user and checks role and, where applicable, staff permission server-side.
