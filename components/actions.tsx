@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCartStore } from "@/store/cart";
+import { useToast } from "@/components/ui/toast";
+import { Loader2 } from "lucide-react";
 
 async function request(url: string, method: string, data?: unknown) {
   const response = await fetch(url, { method, headers: data ? { "Content-Type": "application/json" } : undefined, body: data ? JSON.stringify(data) : undefined });
@@ -14,48 +16,263 @@ async function request(url: string, method: string, data?: unknown) {
 }
 
 export function AddToCart({ menuItemId, disabled = false }: { menuItemId: string; disabled?: boolean }) {
-  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
   const add = useCartStore((state) => state.add);
-  return <div><Button variant="accent" disabled={disabled} onClick={async () => { try { await request("/api/cart", "POST", { menuItemId, quantity: 1 }); add(); setMessage("Added to cart"); } catch (e) { setMessage((e as Error).message); } }}>{disabled ? "Unavailable" : "Add to cart"}</Button>{message && <p className="mt-2 text-xs text-ink/60">{message}</p>}</div>;
+  const { toast } = useToast();
+
+  return (
+    <Button
+      variant="accent"
+      disabled={disabled || loading}
+      onClick={async () => {
+        setLoading(true);
+        try {
+          await request("/api/cart", "POST", { menuItemId, quantity: 1 });
+          add();
+          toast("Added to cart");
+        } catch (e) {
+          toast((e as Error).message, "error");
+        } finally {
+          setLoading(false);
+        }
+      }}
+    >
+      {loading ? <Loader2 size={16} className="animate-spin mr-2" /> : null}
+      {disabled ? "Unavailable" : "Add to cart"}
+    </Button>
+  );
 }
 
 export function CartControls({ id, quantity }: { id: string; quantity: number }) {
   const router = useRouter();
-  return <div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={quantity <= 1} onClick={async () => { await request(`/api/cart/${id}`, "PATCH", { quantity: quantity - 1 }); router.refresh(); }}>-</Button><span className="w-5 text-center">{quantity}</span><Button variant="outline" size="sm" onClick={async () => { await request(`/api/cart/${id}`, "PATCH", { quantity: quantity + 1 }); router.refresh(); }}>+</Button><Button variant="ghost" size="sm" onClick={async () => { await request(`/api/cart/${id}`, "DELETE"); router.refresh(); }}>Remove</Button></div>;
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+
+  const update = async (newQuantity: number) => {
+    setLoading(true);
+    try {
+      await request(`/api/cart/${id}`, "PATCH", { quantity: newQuantity });
+      router.refresh();
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const remove = async () => {
+    setLoading(true);
+    try {
+      await request(`/api/cart/${id}`, "DELETE");
+      router.refresh();
+      toast("Item removed from cart");
+    } catch (e) {
+      toast((e as Error).message, "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="outline" size="sm" disabled={quantity <= 1 || loading} onClick={() => update(quantity - 1)}>-</Button>
+      <span className="w-5 text-center">{quantity}</span>
+      <Button variant="outline" size="sm" disabled={loading} onClick={() => update(quantity + 1)}>+</Button>
+      <Button variant="ghost" size="sm" disabled={loading} onClick={remove}>Remove</Button>
+    </div>
+  );
 }
 
 export function CheckoutButton() {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
   const router = useRouter();
   const reset = useCartStore((state) => state.reset);
-  return <div><Button size="lg" variant="accent" disabled={loading} onClick={async () => { setLoading(true); setError(""); try { const result = await request("/api/checkout", "POST"); reset(); router.push(`/orders/${result.orderId}`); } catch (e) { setError((e as Error).message); setLoading(false); } }}>{loading ? "Contacting test gateway..." : "Pay with virtual wallet"}</Button>{error && <div className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error} <a className="font-bold underline" href="/wallet">Top up wallet</a></div>}</div>;
+  const { toast } = useToast();
+
+  return (
+    <Button
+      size="lg"
+      variant="accent"
+      className="w-full sm:w-auto"
+      disabled={loading}
+      onClick={async () => {
+        setLoading(true);
+        try {
+          const result = await request("/api/checkout", "POST");
+          reset();
+          router.push(`/orders/${result.orderId}`);
+          toast("Order placed successfully!");
+        } catch (e) {
+          toast((e as Error).message, "error");
+          setLoading(false);
+        }
+      }}
+    >
+      {loading ? <Loader2 size={18} className="animate-spin mr-2" /> : null}
+      {loading ? "Processing..." : "Pay with virtual wallet"}
+    </Button>
+  );
 }
 
 export function TopUpForm() {
-  const [amount, setAmount] = useState(""); const [message, setMessage] = useState(""); const router = useRouter();
-  return <form className="flex gap-2" onSubmit={async (event) => { event.preventDefault(); try { await request("/api/wallet/topup", "POST", { amount }); setAmount(""); setMessage("Virtual funds added"); router.refresh(); } catch (e) { setMessage((e as Error).message); } }}><div><Input type="number" min="0.01" step="0.01" placeholder="Amount in INR" value={amount} onChange={(e) => setAmount(e.target.value)} required />{message && <p className="mt-2 text-xs">{message}</p>}</div><Button type="submit" variant="accent">Top up</Button></form>;
+  const [amount, setAmount] = useState("");
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const { toast } = useToast();
+
+  return (
+    <form className="flex gap-2" onSubmit={async (event) => {
+      event.preventDefault();
+      setLoading(true);
+      try {
+        await request("/api/wallet/topup", "POST", { amount });
+        setAmount("");
+        router.refresh();
+        toast(`Added ₹${amount} to wallet`);
+      } catch (e) {
+        toast((e as Error).message, "error");
+      } finally {
+        setLoading(false);
+      }
+    }}>
+      <Input type="number" min="0.01" step="0.01" placeholder="Amount in INR" value={amount} onChange={(e) => setAmount(e.target.value)} required disabled={loading} />
+      <Button type="submit" variant="accent" disabled={loading}>
+        {loading ? <Loader2 size={16} className="animate-spin" /> : "Top up"}
+      </Button>
+    </form>
+  );
 }
 
 export function CancelOrder({ id }: { id: string }) {
-  const [error, setError] = useState(""); const router = useRouter();
-  return <div><Button variant="outline" onClick={async () => { try { await request(`/api/orders/${id}/cancel`, "POST"); router.refresh(); } catch (e) { setError((e as Error).message); } }}>Cancel and refund</Button>{error && <p className="mt-2 text-xs text-red-700">{error}</p>}</div>;
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const { toast } = useToast();
+
+  return (
+    <Button variant="outline" disabled={loading} onClick={async () => {
+      setLoading(true);
+      try {
+        await request(`/api/orders/${id}/cancel`, "POST");
+        router.refresh();
+        toast("Order cancelled successfully");
+      } catch (e) {
+        toast((e as Error).message, "error");
+      } finally {
+        setLoading(false);
+      }
+    }}>
+      {loading ? <Loader2 size={16} className="animate-spin mr-2" /> : null}
+      Cancel and refund
+    </Button>
+  );
 }
 
 export function StatusControl({ id, current, options }: { id: string; current: string; options: string[] }) {
-  const [status, setStatus] = useState(options[0] ?? ""); const [error, setError] = useState(""); const router = useRouter();
-  if (!options.length) return <span className="text-sm text-ink/50">Final state</span>;
-  return <div><div className="flex gap-2"><select className="rounded-xl border bg-white px-3" value={status} onChange={(e) => setStatus(e.target.value)}>{options.map((option) => <option key={option}>{option}</option>)}</select><Button size="sm" onClick={async () => { try { await request(`/api/staff/orders/${id}/status`, "PATCH", { status }); router.refresh(); } catch (e) { setError((e as Error).message); } }}>Update</Button></div>{error && <p className="mt-1 text-xs text-red-700">{error}</p>}<span className="sr-only">Current status {current}</span></div>;
+  const [status, setStatus] = useState(options[0] ?? "");
+  const [loading, setLoading] = useState(false);
+
+  // Sync state when options change (due to a successful update and router.refresh())
+  useEffect(() => {
+    setStatus(options[0] ?? "");
+  }, [current, options]);
+
+  const router = useRouter();
+  const { toast } = useToast();
+
+  if (!options.length) return <span className="text-sm font-semibold text-ink/50">Final state</span>;
+
+  return (
+    <div className="flex gap-2">
+      <select className="h-10 rounded-xl border border-ink/15 bg-white px-3 text-sm outline-none transition focus:border-leaf focus:ring-2 focus:ring-leaf/10" value={status} onChange={(e) => setStatus(e.target.value)} disabled={loading}>
+        {options.map((option) => <option key={option}>{option}</option>)}
+      </select>
+      <Button size="default" disabled={loading} onClick={async () => {
+        setLoading(true);
+        try {
+          await request(`/api/staff/orders/${id}/status`, "PATCH", { status });
+          router.refresh();
+          toast(`Order status updated to ${status}`);
+        } catch (e) {
+          toast((e as Error).message, "error");
+        } finally {
+          setLoading(false);
+        }
+      }}>
+        {loading ? <Loader2 size={16} className="animate-spin" /> : "Update"}
+      </Button>
+    </div>
+  );
 }
 
 export function SuspendButton({ id, suspended }: { id: string; suspended: boolean }) {
-  const router = useRouter(); return <Button variant="outline" size="sm" onClick={async () => { await request(`/api/admin/users/${id}`, "PATCH", { isSuspended: !suspended }); router.refresh(); }}>{suspended ? "Restore" : "Suspend"}</Button>;
+  const router = useRouter();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  
+  return (
+    <Button variant="outline" size="sm" disabled={loading} onClick={async () => {
+      setLoading(true);
+      try {
+        await request(`/api/admin/users/${id}`, "PATCH", { isSuspended: !suspended });
+        router.refresh();
+        toast(`User ${suspended ? "restored" : "suspended"}`);
+      } catch (e) {
+        toast((e as Error).message, "error");
+      } finally {
+        setLoading(false);
+      }
+    }}>
+      {loading ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+      {suspended ? "Restore" : "Suspend"}
+    </Button>
+  );
 }
 
 export function DeleteButton({ url, label = "Delete" }: { url: string; label?: string }) {
-  const [error, setError] = useState(""); const router = useRouter(); return <div><Button variant="danger" size="sm" onClick={async () => { if (!confirm(`${label}?`)) return; try { await request(url, "DELETE"); router.refresh(); } catch (e) { setError((e as Error).message); } }}>{label}</Button>{error && <p className="mt-1 max-w-52 text-xs text-red-700">{error}</p>}</div>;
+  const router = useRouter();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  
+  return (
+    <Button variant="danger" size="sm" disabled={loading} onClick={async () => {
+      if (!confirm(`Are you sure you want to ${label.toLowerCase()}?`)) return;
+      setLoading(true);
+      try {
+        await request(url, "DELETE");
+        router.refresh();
+        toast("Successfully deleted");
+      } catch (e) {
+        toast((e as Error).message, "error");
+      } finally {
+        setLoading(false);
+      }
+    }}>
+      {loading ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+      {label}
+    </Button>
+  );
 }
 
 export function AvailabilityButton({ id, available }: { id: string; available: boolean }) {
-  const router = useRouter(); return <Button variant="outline" size="sm" onClick={async () => { await request(`/api/menu/${id}`, "PATCH", { isAvailable: !available }); router.refresh(); }}>{available ? "Mark unavailable" : "Mark available"}</Button>;
+  const router = useRouter();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  
+  return (
+    <Button variant="outline" size="sm" disabled={loading} onClick={async () => {
+      setLoading(true);
+      try {
+        await request(`/api/menu/${id}`, "PATCH", { isAvailable: !available });
+        router.refresh();
+        toast(`Menu item marked as ${available ? "unavailable" : "available"}`);
+      } catch (e) {
+        toast((e as Error).message, "error");
+      } finally {
+        setLoading(false);
+      }
+    }}>
+      {loading ? <Loader2 size={14} className="animate-spin mr-1" /> : null}
+      {available ? "Mark unavailable" : "Mark available"}
+    </Button>
+  );
 }
